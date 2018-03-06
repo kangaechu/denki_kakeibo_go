@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"regexp"
+	"time"
 
 	"github.com/chromedp/chromedp"
 	"github.com/spf13/viper"
@@ -18,6 +20,7 @@ func main() {
 	}
 	var userID = viper.GetString("userID")
 	var password = viper.GetString("password")
+	var days = viper.GetInt("days")
 
 	var err error
 
@@ -26,16 +29,34 @@ func main() {
 	defer cancel()
 
 	// create chrome instance
-	c, err := chromedp.New(ctxt, chromedp.WithLog(log.Printf))
+	c, err := chromedp.New(ctxt, chromedp.WithErrorf(log.Printf))
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	// run task list
+	// ログイン→30分ごとページへの遷移
 	var site, res string
-	err = c.Run(ctxt, getDenkiKakeibo30MinData(userID, password, &site, &res))
+	err = c.Run(ctxt, login(userID, password, &site, &res))
 	if err != nil {
 		log.Fatal(err)
+	}
+
+	for i := 0; i < days; i++ {
+		// データを取得
+		var html string
+		err = c.Run(ctxt, get30MinData(&site, &html))
+		if err != nil {
+			log.Fatal(err)
+		}
+		rDate := regexp.MustCompile(`(\d{4}\/\d{2}\/\d{2})　の電気使用量`)
+		rData := regexp.MustCompile(`var items = \[\["日次", (.*?)\]`)
+
+		fmt.Println(rDate.FindStringSubmatch(html)[1], rData.FindStringSubmatch(html)[1])
+
+		err = c.Run(ctxt, navPrevDate(&site, &res))
+		if err != nil {
+			log.Fatal(err)
+		}
 	}
 
 	// shutdown chrome
@@ -49,12 +70,10 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
-
-	log.Printf("saved screenshot from search result listing `%s` (%s)", res, site)
 }
 
-func getDenkiKakeibo30MinData(userID string, password string, site, res *string) chromedp.Tasks {
-	return chromedp.Tasks{
+func login(userID string, password string, site, res *string) chromedp.Tasks {
+	tasks := chromedp.Tasks{
 		// ログインページ
 		chromedp.Navigate(`https://www.kakeibo.tepco.co.jp/dk/aut/login/`),
 		chromedp.WaitVisible(`#idLogin`, chromedp.ByID),
@@ -67,10 +86,22 @@ func getDenkiKakeibo30MinData(userID string, password string, site, res *string)
 		// 日毎の使用量のページ
 		chromedp.WaitVisible(`.graph_head a`, chromedp.ByQuery),
 		chromedp.Click(`.graph_head a`, chromedp.ByQuery), // 時間別グラフはこちら
-		chromedp.WaitVisible(`.hogehoge`, chromedp.ByQuery),
-		// 30分ごとの使用量のページ
-		// chromedp.ActionFunc(func(context.Context, cdp.Executor) error {
-		// 	return ioutil.WriteFile("screenshot.png", buf, 0644)
-		// }),
 	}
+	return tasks
+}
+
+func get30MinData(site, res *string) chromedp.Tasks {
+	tasks := chromedp.Tasks{
+		// 日毎の使用量のページ
+		chromedp.Sleep(5 * time.Second),
+		chromedp.OuterHTML(`html`, res, chromedp.ByQuery),
+	}
+	return tasks
+}
+
+func navPrevDate(site, res *string) chromedp.Tasks {
+	tasks := chromedp.Tasks{
+		chromedp.Click(`#doPrevious`),
+	}
+	return tasks
 }
