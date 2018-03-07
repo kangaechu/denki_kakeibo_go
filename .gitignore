@@ -21,3 +21,4 @@
 # End of https://www.gitignore.io/api/go
 
 settings.yaml
+*.csv

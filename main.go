@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
 	"regexp"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 )
 
 func main() {
+	// settings.yamlから設定を読み込み
 	viper.SetConfigName("settings")  // 設定ファイル名を拡張子抜きで指定する
 	viper.AddConfigPath(".")         // 現在のワーキングディレクトリを探索することもできる
 	vipererr := viper.ReadInConfig() // 設定ファイルを探索して読み取る
@@ -22,7 +24,15 @@ func main() {
 	var password = viper.GetString("password")
 	var days = viper.GetInt("days")
 
-	var err error
+	// 出力ファイルを開く
+	file, err := os.Create(`output.csv`)
+	if err != nil {
+		panic(fmt.Errorf("出力ファイルオープンエラー: %s", err))
+	}
+	defer file.Close()
+
+	header := "DATE, 0:00, 0:30, 1:00, 1:30, 2:00, 2:30, 3:00, 3:30, 4:00, 4:30, 5:00, 5:30, 6:00, 6:30, 7:00, 7:30, 8:00, 8:30, 9:00, 9:30, 10:00, 10:30, 11:00, 11:30, 12:00, 12:30, 13:00, 13:30, 14:00, 14:30, 15:00, 15:30, 16:00, 16:30, 17:00, 17:30, 18:00, 18:30, 19:00, 19:30, 20:00, 20:30, 21:00, 21:30, 22:00, 22:30, 23:00, 23:30, 0:00"
+	file.Write(([]byte)(header))
 
 	// create context
 	ctxt, cancel := context.WithCancel(context.Background())
@@ -51,7 +61,9 @@ func main() {
 		rDate := regexp.MustCompile(`(\d{4}\/\d{2}\/\d{2})　の電気使用量`)
 		rData := regexp.MustCompile(`var items = \[\["日次", (.*?)\]`)
 
-		fmt.Println(rDate.FindStringSubmatch(html)[1], rData.FindStringSubmatch(html)[1])
+		oneDayData := fmt.Sprintf("%s, %s\n", rDate.FindStringSubmatch(html)[1], rData.FindStringSubmatch(html)[1])
+		file.Write(([]byte)(oneDayData))
+		fmt.Println(oneDayData)
 
 		err = c.Run(ctxt, navPrevDate(&site, &res))
 		if err != nil {
